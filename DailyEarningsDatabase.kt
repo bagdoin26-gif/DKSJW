@@ -140,6 +140,23 @@ class DailyEarningsDatabase(context: Context) :
         writableDatabase.delete("daily_extra", "id=?", arrayOf(id.toString()))
     }
 
+    /**
+     * 선택한 날짜의 배달 실적과 미션/프로모션 기록을 모두 삭제합니다.
+     * 다른 날짜의 기록에는 영향을 주지 않습니다.
+     */
+    @Synchronized
+    fun deleteDate(date: String) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete("daily_base", "date=?", arrayOf(date))
+            db.delete("daily_extra", "date=?", arrayOf(date))
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     fun getExtras(date: String): List<ExtraEntry> {
         val result = mutableListOf<ExtraEntry>()
         readableDatabase.query(
