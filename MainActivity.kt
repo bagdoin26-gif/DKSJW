@@ -577,6 +577,29 @@ class MainActivity : Activity() {
             detail.addView(baseButton)
             detail.addView(missionButton)
             detail.addView(promoButton)
+
+            val deleteDateButton = Button(this).apply {
+                text = "🗑 이 날짜 기록 삭제"
+                isAllCaps = false
+                setOnClickListener {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("날짜 기록 삭제")
+                        .setMessage("${selectedDate}의 배달 건수, 배달 수입, 미션비, 프로모션비를 모두 삭제할까요?\n삭제한 기록은 복구할 수 없습니다.")
+                        .setNegativeButton("취소", null)
+                        .setPositiveButton("삭제") { _, _ ->
+                            earningsDb.deleteDate(selectedDate)
+                            refreshDetail()
+                            refreshCalendar()
+                            Toast.makeText(
+                                this@MainActivity,
+                                "${selectedDate} 기록을 삭제했습니다.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        .show()
+                }
+            }
+            detail.addView(deleteDateButton)
         }
 
         refreshCalendar = {
