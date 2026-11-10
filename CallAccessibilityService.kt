@@ -406,13 +406,11 @@ class CallAccessibilityService : AccessibilityService() {
         if (currentEvent.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             pendingWindowCheck?.let { handler.removeCallbacks(it) }
 
+            // rootInActiveWindow는 접근성 오버레이 자신을 반환할 수 있으므로
+            // 전면 앱 판별에는 사용하지 않고 WINDOW_STATE_CHANGED의 발생 패키지를 사용한다.
+            val packageAtEvent = eventPackage
             val checkWindow = Runnable {
-                val activeRoot = rootInActiveWindow
-                val activePackage = try {
-                    activeRoot?.packageName?.toString() ?: eventPackage
-                } finally {
-                    try { activeRoot?.recycle() } catch (_: Exception) {}
-                }
+                val activePackage = packageAtEvent
 
                 // 패키지를 확인하지 못한 이벤트는 현재 표시 상태를 유지한다.
                 if (activePackage.isNullOrBlank()) {
