@@ -21,7 +21,7 @@ import java.util.Locale
  * are read, and addExtra()/updateExtra()/deleteExtra() for manual additions.
  */
 class DailyEarningsDatabase(context: Context) :
-    SQLiteOpenHelper(context, "CallWatchEarnings.db", null, 1) {
+    SQLiteOpenHelper(context, "CallWatchEarnings.db", null, 2) {
 
     data class DailySummary(
         val date: String,
@@ -49,6 +49,7 @@ class DailyEarningsDatabase(context: Context) :
         val date: String,
         val type: String,
         val amount: Long,
+        val count: Int,
         val memo: String
     )
 
@@ -76,6 +77,7 @@ class DailyEarningsDatabase(context: Context) :
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT NOT NULL,
                 type TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 0,
                 amount INTEGER NOT NULL,
                 memo TEXT NOT NULL DEFAULT '',
                 created_at INTEGER NOT NULL
@@ -86,7 +88,7 @@ class DailyEarningsDatabase(context: Context) :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Version 1 is the initial independent earnings database.
+        if (oldVersion < 2) db.execSQL("ALTER TABLE daily_extra ADD COLUMN count INTEGER NOT NULL DEFAULT 0")
     }
 
     @Synchronized
@@ -104,14 +106,15 @@ class DailyEarningsDatabase(context: Context) :
     }
 
     @Synchronized
-    fun addExtra(date: String, type: String, amount: Long, memo: String = ""): Long {
+    fun addExtra(date: String, type: String, count: Int, amount: Long, memo: String = ""): Long {
         require(type == TYPE_PROMOTION || type == TYPE_MISSION) {
             "type must be $TYPE_PROMOTION or $TYPE_MISSION"
         }
         val values = ContentValues().apply {
             put("date", date)
             put("type", type)
-            put("amount", amount)
+            put("count", count.coerceAtLeast(0))
+            put("amount", amount.coerceAtLeast(0L))
             put("memo", memo)
             put("created_at", System.currentTimeMillis())
         }
@@ -121,7 +124,7 @@ class DailyEarningsDatabase(context: Context) :
     }
 
     @Synchronized
-    fun updateExtra(id: Long, type: String, amount: Long, memo: String) {
+    fun updateExtra(id: Long, type: String, count: Int, amount: Long, memo: String) {
         require(type == TYPE_PROMOTION || type == TYPE_MISSION)
         val values = ContentValues().apply {
             put("type", type)
@@ -140,7 +143,7 @@ class DailyEarningsDatabase(context: Context) :
         val result = mutableListOf<ExtraEntry>()
         readableDatabase.query(
             "daily_extra",
-            arrayOf("id", "date", "type", "amount", "memo"),
+            arrayOf("id", "date", "type", "count", "amount", "memo"),
             "date=?",
             arrayOf(date),
             null, null, "id DESC"
@@ -150,8 +153,9 @@ class DailyEarningsDatabase(context: Context) :
                     id = c.getLong(0),
                     date = c.getString(1),
                     type = c.getString(2),
-                    amount = c.getLong(3),
-                    memo = c.getString(4)
+                    count = c.getInt(3),
+                    amount = c.getLong(4),
+                    memo = c.getString(5)
                 )
             }
         }
@@ -176,11 +180,13 @@ class DailyEarningsDatabase(context: Context) :
 
         var promotion = 0L
         var mission = 0L
+        var extraCount = 0
         readableDatabase.rawQuery(
             """
             SELECT
                 COALESCE(SUM(CASE WHEN type=? THEN amount ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN type=? THEN amount ELSE 0 END), 0)
+                COALESCE(SUM(CASE WHEN type=? THEN amount ELSE 0 END), 0),
+                COALESCE(SUM(count), 0)
             FROM daily_extra WHERE date=?
             """.trimIndent(),
             arrayOf(TYPE_PROMOTION, TYPE_MISSION, date)
@@ -188,9 +194,10 @@ class DailyEarningsDatabase(context: Context) :
             if (c.moveToFirst()) {
                 promotion = c.getLong(0)
                 mission = c.getLong(1)
+                extraCount = c.getInt(2)
             }
         }
-        return DailySummary(date, count, fee, promotion, mission)
+        return DailySummary(date, count + extraCount, fee, promotion, mission)
     }
 
     /** Wednesday through Tuesday, based on the supplied local date. */
@@ -226,11 +233,13 @@ class DailyEarningsDatabase(context: Context) :
 
         var promotion = 0L
         var mission = 0L
+        var extraCount = 0
         readableDatabase.rawQuery(
             """
             SELECT
               COALESCE(SUM(CASE WHEN type=? THEN amount ELSE 0 END),0),
-              COALESCE(SUM(CASE WHEN type=? THEN amount ELSE 0 END),0)
+              COALESCE(SUM(CASE WHEN type=? THEN amount ELSE 0 END),0),
+              COALESCE(SUM(count),0)
             FROM daily_extra WHERE date BETWEEN ? AND ?
             """.trimIndent(),
             arrayOf(TYPE_PROMOTION, TYPE_MISSION, start, end)
@@ -238,11 +247,12 @@ class DailyEarningsDatabase(context: Context) :
             if (c.moveToFirst()) {
                 promotion = c.getLong(0)
                 mission = c.getLong(1)
+                extraCount = c.getInt(2)
             }
         }
 
         return WeeklySummary(
-            start, end, count, fee + promotion + mission, fee, promotion, mission
+            start, end, count + extraCount, fee + promotion + mission, fee, promotion, mission
         )
     }
 
