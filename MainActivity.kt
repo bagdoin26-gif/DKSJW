@@ -523,7 +523,10 @@ class MainActivity : Activity() {
         }
         mainLayout.addView(detail)
 
-        fun refreshDetail() {
+        lateinit var refreshDetail: () -> Unit
+        lateinit var refreshCalendar: () -> Unit
+
+        refreshDetail = {
             detail.removeAllViews()
             val summary = earningsDb.getDailySummary(selectedDate)
             fun detailLine(value: String, size: Float = 14f) {
@@ -576,7 +579,7 @@ class MainActivity : Activity() {
             detail.addView(promoButton)
         }
 
-        fun refreshCalendar() {
+        refreshCalendar = {
             calendarGrid.removeAllViews()
             monthLabel.text = SimpleDateFormat("yyyy년 M월", Locale.KOREA).format(month.time)
             listOf("일", "월", "화", "수", "목", "금", "토").forEach { label ->
