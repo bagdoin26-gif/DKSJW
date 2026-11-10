@@ -747,7 +747,7 @@ class MainActivity : Activity() {
                     Toast.makeText(this, "금액을 올바르게 입력하세요.", Toast.LENGTH_SHORT).show()
                 } else {
                     // 미션비와 프로모션비는 금액만 기록하며 완료 건수에는 포함하지 않습니다.
-                    earningsDb.addExtra(date, type, 0, amount, memoInput.text.toString())
+                    earningsDb.addExtra(date, type, amount, memoInput.text.toString())
                     onSaved()
                 }
             }.show()
