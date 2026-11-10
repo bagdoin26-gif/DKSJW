@@ -67,6 +67,7 @@ class CallAccessibilityService : AccessibilityService() {
     private var targetForeground = false
     private var screenReadSuccess = false
     private var pendingWindowCheck: Runnable? = null
+    private var lastAppliedPackage: String? = null
 
     // 기존 홈/다른 앱용 보조창
     private var overlayView: FrameLayout? = null
@@ -347,8 +348,7 @@ class CallAccessibilityService : AccessibilityService() {
             dispatchFloatingBar?.updateCalls(overlayWaitingCalls)
             updateHighestCallOverlay(overlayWaitingCalls)
         } finally {
-            try { source.recycle() } catch (_: Exception) {}
-        }
+            try { source.recycle() } catch (_: Exception) {}        }
     }
 
     private fun showFullOverlay() {
@@ -388,10 +388,10 @@ class CallAccessibilityService : AccessibilityService() {
         val eventPackage = currentEvent.packageName?.toString()
         val ownPackage = applicationContext.packageName
 
-        // 로그인 및 모니터링이 켜져 있지 않으면 모든 보조 UI를 숨긴다.
         if (!isRunning()) {
             pendingWindowCheck?.let { handler.removeCallbacks(it) }
             pendingWindowCheck = null
+            lastAppliedPackage = null
             targetForeground = false
             screenReadSuccess = false
             dispatchFloatingBar?.hide()
@@ -401,7 +401,8 @@ class CallAccessibilityService : AccessibilityService() {
             return
         }
 
-        // 화면 전환 시 실제 전면 앱을 확인한 뒤 UI 세 종류를 분리해서 표시한다.
+        // 창의 표시/숨김은 화면 전환 이벤트에서 한 번만 판정한다.
+        // 일반 콘텐츠 이벤트마다 오버레이를 다시 만들지 않는다.
         if (currentEvent.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             pendingWindowCheck?.let { handler.removeCallbacks(it) }
 
@@ -413,27 +414,36 @@ class CallAccessibilityService : AccessibilityService() {
                     try { activeRoot?.recycle() } catch (_: Exception) {}
                 }
 
-                when (activePackage) {
-                    TARGET_PACKAGE -> {
-                        targetForeground = true
-                        dispatchFloatingBar?.show()
-                        showFullOverlay()
-                        hideOverlay()
-                    }
-                    ownPackage -> {
-                        targetForeground = false
-                        screenReadSuccess = false
-                        dispatchFloatingBar?.hide()
-                        hideFullOverlay()
-                        hideOverlay()
-                    }
-                    else -> {
-                        // 배민커넥트 외부에서는 기존 보조창만 표시한다.
-                        targetForeground = false
-                        screenReadSuccess = false
-                        dispatchFloatingBar?.hide()
-                        hideFullOverlay()
-                        showOverlay()
+                // 패키지를 확인하지 못한 이벤트는 현재 표시 상태를 유지한다.
+                if (activePackage.isNullOrBlank()) {
+                    pendingWindowCheck = null
+                    return@Runnable
+                }
+
+                // 같은 화면이면 창을 제거/재생성하지 않는다.
+                if (activePackage != lastAppliedPackage) {
+                    lastAppliedPackage = activePackage
+                    when (activePackage) {
+                        TARGET_PACKAGE -> {
+                            targetForeground = true
+                            dispatchFloatingBar?.show()
+                            hideOverlay()
+                            showFullOverlay()
+                        }
+                        ownPackage -> {
+                            targetForeground = false
+                            screenReadSuccess = false
+                            dispatchFloatingBar?.hide()
+                            hideFullOverlay()
+                            hideOverlay()
+                        }
+                        else -> {
+                            targetForeground = false
+                            screenReadSuccess = false
+                            dispatchFloatingBar?.hide()
+                            hideFullOverlay()
+                            showOverlay()
+                        }
                     }
                 }
 
@@ -442,29 +452,18 @@ class CallAccessibilityService : AccessibilityService() {
             }
 
             pendingWindowCheck = checkWindow
-            handler.postDelayed(checkWindow, 250L)
+            handler.postDelayed(checkWindow, 350L)
         }
 
-        // 우리 보조 앱 자체 화면에서는 모든 오버레이를 숨긴다.
-        if (eventPackage == ownPackage) {
-            targetForeground = false
-            screenReadSuccess = false
-            dispatchFloatingBar?.hide()
-            hideFullOverlay()
-            hideOverlay()
-            updateStatusDisplay()
-            return
-        }
+        // 우리 앱 화면의 일반 이벤트에서는 데이터 수집을 하지 않는다.
+        if (eventPackage == ownPackage) return
 
-        // 배민커넥트 외부의 일반 이벤트는 화면 전환 확인에만 맡긴다.
+        // 배민커넥트 외부에서는 기존 보조창만 유지하고 수집하지 않는다.
         if (eventPackage != TARGET_PACKAGE) return
 
-        pendingWindowCheck?.let { handler.removeCallbacks(it) }
-        pendingWindowCheck = null
+        // 배민커넥트 화면의 데이터 수집만 수행한다.
+        // 표시 상태는 위의 WINDOW_STATE_CHANGED 판정만 담당한다.
         targetForeground = true
-        dispatchFloatingBar?.show()
-        showFullOverlay()
-        hideOverlay()
 
         android.util.Log.i(
             "EarningsTabDebug",
@@ -513,12 +512,7 @@ class CallAccessibilityService : AccessibilityService() {
                 }
 
                 updateTodayMetrics(screenText)
-
-                collectCall(
-                    root = root,
-                    screenText = screenText,
-                    screenDetails = screenDetails
-                )
+                collectCall(root, screenText, screenDetails)
             }
         } finally {
             try { root.recycle() } catch (_: Exception) {}
@@ -697,8 +691,7 @@ class CallAccessibilityService : AccessibilityService() {
             setPadding(dp(10), dp(8), dp(10), dp(8))
             background = GradientDrawable().apply {
                 setColor(Color.argb(240, 255, 255, 255))
-                setStroke(dp(2), Color.rgb(0, 180, 70))
-                cornerRadius = dp(9).toFloat()
+                setStroke(dp(2), Color.rgb(0, 180, 70))                cornerRadius = dp(9).toFloat()
             }
         }
 
@@ -1047,8 +1040,7 @@ class CallAccessibilityService : AccessibilityService() {
         dashboardWeeklyView = weeklyValue
         dashboardWaitingView = waitingValue
 
-        try {
-            windowManager.addView(root, params)
+        try {            windowManager.addView(root, params)
         } catch (_: Exception) {
             overlayView = null
             overlayPanel = null
@@ -1409,7 +1401,6 @@ class CallAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 }
-
 
 
 
