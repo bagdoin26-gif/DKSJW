@@ -491,6 +491,20 @@ class CallAccessibilityService : AccessibilityService() {
 
             val screenText = extractedText.toString().trim()
             val screenDetails = extractedDetails.toString().trim()
+
+            // 어제/오늘 수익 화면 진단: 화면 문구와 모든 접근성 요소 ID를 로그로 남긴다.
+            if (screenText.contains("수입") || screenText.contains("완료건수") ||
+                screenText.contains("오늘") || screenText.contains("어제")) {
+                android.util.Log.i(
+                    "EarningsTabCheck",
+                    "===== SCREEN TEXT START =====\n$screenText\n===== SCREEN TEXT END ====="
+                )
+                android.util.Log.i(
+                    "EarningsTabCheck",
+                    "===== VIEW IDS START =====\n$screenDetails\n===== VIEW IDS END ====="
+                )
+            }
+
             screenReadSuccess = screenText.isNotBlank()
 
             if (screenReadSuccess) {
