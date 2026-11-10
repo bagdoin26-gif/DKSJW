@@ -221,12 +221,20 @@ class CallAccessibilityService : AccessibilityService() {
         if (description.isNotBlank() && description != nodeText) {
             text.append(description).append('\n')
         }
+        val bounds = Rect()
+        try { node.getBoundsInScreen(bounds) } catch (_: Exception) {}
         details.append("DEPTH=").append(depth)
             .append(" TEXT=").append(nodeText)
             .append(" DESC=").append(description)
             .append(" ID=").append(node.viewIdResourceName.orEmpty())
             .append(" CLASS=").append(node.className?.toString().orEmpty())
             .append(" CLICK=").append(node.isClickable)
+            .append(" SELECTED=").append(node.isSelected)
+            .append(" FOCUSED=").append(node.isFocused)
+            .append(" ACCESSIBILITY_FOCUSED=").append(node.isAccessibilityFocused)
+            .append(" CHECKABLE=").append(node.isCheckable)
+            .append(" CHECKED=").append(node.isChecked)
+            .append(" BOUNDS=").append(bounds.flattenToString())
             .append('\n')
 
         for (i in 0 until node.childCount) {
@@ -247,8 +255,7 @@ class CallAccessibilityService : AccessibilityService() {
         if (id.endsWith(suffix)) return id
         for (i in 0 until node.childCount) {
             val child = try { node.getChild(i) } catch (_: Exception) { null } ?: continue
-            val found = try {
-                findButtonId(child, suffix)
+            val found = try {                findButtonId(child, suffix)
             } finally {
                 try { child.recycle() } catch (_: Exception) {}
             }
@@ -497,8 +504,7 @@ class CallAccessibilityService : AccessibilityService() {
                 screenText.contains("오늘") || screenText.contains("어제")) {
                 android.util.Log.i(
                     "EarningsTabCheck",
-                    "===== SCREEN TEXT START =====\n$screenText\n===== SCREEN TEXT END ====="
-                )
+                    "===== SCREEN TEXT START =====\n$screenText\n===== SCREEN TEXT END ====="                )
                 android.util.Log.i(
                     "EarningsTabCheck",
                     "===== VIEW IDS START =====\n$screenDetails\n===== VIEW IDS END ====="
@@ -748,7 +754,6 @@ class CallAccessibilityService : AccessibilityService() {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             y = dp(590)
         }
-
         try {
             windowManager.addView(panel, params)
             highestCallOverlayView = panel
@@ -998,7 +1003,6 @@ class CallAccessibilityService : AccessibilityService() {
             lp.bottomMargin = dp(7)
             panel.addView(row, lp)
         }
-
         addTileRow(makeTile("오늘 수익", todayValue), makeTile("주간 수익", weeklyValue))
         addTileRow(makeTile("대기 콜", waitingValue), makeTile("작동 상태", stateValue))
 
@@ -1247,8 +1251,7 @@ class CallAccessibilityService : AccessibilityService() {
 
     private fun createResizeListener(): View.OnTouchListener {
 
-        var startWidth = 0
-        var touchX = 0f
+        var startWidth = 0        var touchX = 0f
 
         return View.OnTouchListener { _, event ->
 
@@ -1453,7 +1456,6 @@ class CallAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 }
-
 
 
 
