@@ -388,9 +388,20 @@ class CallAccessibilityService : AccessibilityService() {
         val eventPackage = currentEvent.packageName?.toString()
         val ownPackage = applicationContext.packageName
 
-        // 화면 전환 이벤트에서만 실제 전면 앱을 다시 확인한다.
-        // 알림창/키보드 등 다른 패키지의 일반 접근성 이벤트 때문에
-        // 배민커넥트 위의 창이 순간적으로 사라지는 것을 방지한다.
+        // 로그인 및 모니터링이 켜져 있지 않으면 모든 보조 UI를 숨긴다.
+        if (!isRunning()) {
+            pendingWindowCheck?.let { handler.removeCallbacks(it) }
+            pendingWindowCheck = null
+            targetForeground = false
+            screenReadSuccess = false
+            dispatchFloatingBar?.hide()
+            hideFullOverlay()
+            hideOverlay()
+            updateStatusDisplay()
+            return
+        }
+
+        // 화면 전환 시 실제 전면 앱을 확인한 뒤 UI 세 종류를 분리해서 표시한다.
         if (currentEvent.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             pendingWindowCheck?.let { handler.removeCallbacks(it) }
 
@@ -402,18 +413,28 @@ class CallAccessibilityService : AccessibilityService() {
                     try { activeRoot?.recycle() } catch (_: Exception) {}
                 }
 
-                val isTarget = activePackage == TARGET_PACKAGE
-                targetForeground = isTarget && isRunning()
-
-                if (targetForeground) {
-                    dispatchFloatingBar?.show()
-                    showFullOverlay()
-                    hideOverlay()
-                } else {
-                    screenReadSuccess = false
-                    dispatchFloatingBar?.hide()
-                    hideFullOverlay()
-                    hideOverlay()
+                when (activePackage) {
+                    TARGET_PACKAGE -> {
+                        targetForeground = true
+                        dispatchFloatingBar?.show()
+                        showFullOverlay()
+                        hideOverlay()
+                    }
+                    ownPackage -> {
+                        targetForeground = false
+                        screenReadSuccess = false
+                        dispatchFloatingBar?.hide()
+                        hideFullOverlay()
+                        hideOverlay()
+                    }
+                    else -> {
+                        // 배민커넥트 외부에서는 기존 보조창만 표시한다.
+                        targetForeground = false
+                        screenReadSuccess = false
+                        dispatchFloatingBar?.hide()
+                        hideFullOverlay()
+                        showOverlay()
+                    }
                 }
 
                 pendingWindowCheck = null
@@ -424,11 +445,8 @@ class CallAccessibilityService : AccessibilityService() {
             handler.postDelayed(checkWindow, 250L)
         }
 
-        // 배민커넥트가 아닌 패키지의 일반 이벤트는 화면 전환으로 간주하지 않는다.
-        // 실제 화면 전환 여부는 위의 지연된 WINDOW_STATE_CHANGED 확인에서 처리한다.
-        if (eventPackage != TARGET_PACKAGE) return
-
-        if (!isRunning()) {
+        // 우리 보조 앱 자체 화면에서는 모든 오버레이를 숨긴다.
+        if (eventPackage == ownPackage) {
             targetForeground = false
             screenReadSuccess = false
             dispatchFloatingBar?.hide()
@@ -437,6 +455,9 @@ class CallAccessibilityService : AccessibilityService() {
             updateStatusDisplay()
             return
         }
+
+        // 배민커넥트 외부의 일반 이벤트는 화면 전환 확인에만 맡긴다.
+        if (eventPackage != TARGET_PACKAGE) return
 
         pendingWindowCheck?.let { handler.removeCallbacks(it) }
         pendingWindowCheck = null
@@ -798,7 +819,6 @@ class CallAccessibilityService : AccessibilityService() {
                 addView(value, LinearLayout.LayoutParams(-1, dp(29)))
             }
         }
-
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1197,8 +1217,7 @@ class CallAccessibilityService : AccessibilityService() {
                     startY = params.y
                     touchX = event.rawX
                     touchY = event.rawY
-                    true
-                }
+                    true                }
 
                 MotionEvent.ACTION_MOVE -> {
                     params.x = startX + (event.rawX - touchX).toInt()
@@ -1390,7 +1409,6 @@ class CallAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 }
-
 
 
 
