@@ -503,19 +503,13 @@ class CallAccessibilityService : AccessibilityService() {
                 }
 
                 else -> {
-                    // 배민커넥트가 아닌 다른 앱에서도 로그인 상태라면
-                    // 터치 통과형 전체화면 레이어와 옆면 플로팅 버튼을 유지한다.
+                    // 배민커넥트가 아닌 다른 앱에서는 전체화면 레이어와
+                    // 측면 플로팅 버튼을 모두 숨긴다.
                     targetForeground = false
                     screenReadSuccess = false
-                    if (isRunning()) {
-                        dispatchFloatingBar?.show()
-                        showTransparentFullOverlay()
-                        showOverlay()
-                    } else {
-                        dispatchFloatingBar?.hide()
-                        hideFullOverlay()
-                        hideOverlay()
-                    }
+                    dispatchFloatingBar?.hide()
+                    hideFullOverlay()
+                    hideOverlay()
                 }
             }
 
