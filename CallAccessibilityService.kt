@@ -991,8 +991,16 @@ class CallAccessibilityService : AccessibilityService() {
         }
         panel.addView(status)
 
-        val todayValue = makeText("0원", 16f, WHITE, true)
-        val weeklyValue = makeText("0원", 16f, WHITE, true)
+        // 수익 숫자가 길어져도 타일 크기는 유지하고 글자만 자동으로 축소합니다.
+        fun makeAmountText(): TextView = makeText("0원", 16f, WHITE, true).apply {
+            maxLines = 1
+            includeFontPadding = false
+            setAutoSizeTextTypeUniformWithConfiguration(
+                8, 16, 1, TypedValue.COMPLEX_UNIT_SP
+            )
+        }
+        val todayValue = makeAmountText()
+        val weeklyValue = makeAmountText()
         val waitingValue = makeText("0개", 16f, Color.rgb(80, 230, 145), true)
         val stateValue = makeText("정상 작동", 13f, GREEN, true)
 
