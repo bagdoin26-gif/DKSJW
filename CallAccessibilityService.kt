@@ -62,6 +62,8 @@ class CallAccessibilityService : AccessibilityService() {
     private lateinit var windowManager: WindowManager
 
     private var serviceConnected = false
+    private var lastStatusText: String? = null
+    private var lastStatusColor: Int? = null
     private var targetForeground = false
     private var screenReadSuccess = false
     private var pendingWindowCheck: Runnable? = null
@@ -184,6 +186,203 @@ class CallAccessibilityService : AccessibilityService() {
         return preferences.getBoolean("logged_in", false) &&
                 preferences.getBoolean("monitoring_enabled", false)
     }
+
+    private fun updateStatusDisplay() {
+        val pair = when {
+            !serviceConnected -> STATUS_ERROR to RED
+            targetForeground && screenReadSuccess -> STATUS_NORMAL to GREEN
+            targetForeground -> STATUS_RECOGNIZING to GREEN
+            else -> STATUS_WAITING to GREEN
+        }
+        if (lastStatusText == pair.first && lastStatusColor == pair.second) return
+        lastStatusText = pair.first
+        lastStatusColor = pair.second
+        statusView?.apply {
+            text = pair.first
+            setTextColor(pair.second)
+        }
+        fullStatusView?.apply {
+            text = pair.first
+            setTextColor(pair.second)
+        }
+    }
+
+    private fun readNode(
+        node: AccessibilityNodeInfo,
+        text: StringBuilder,
+        details: StringBuilder,
+        depth: Int
+    ) {
+        if (depth > 35) return
+        val nodeText = node.text?.toString()?.trim().orEmpty()
+        val description = node.contentDescription?.toString()?.trim().orEmpty()
+        if (nodeText.isNotBlank()) text.append(nodeText).append('\n')
+        if (description.isNotBlank() && description != nodeText) {
+            text.append(description).append('\n')
+        }
+        details.append("DEPTH=").append(depth)
+            .append(" TEXT=").append(nodeText)
+            .append(" DESC=").append(description)
+            .append(" ID=").append(node.viewIdResourceName.orEmpty())
+            .append(" CLASS=").append(node.className?.toString().orEmpty())
+            .append(" CLICK=").append(node.isClickable)
+            .append('\n')
+
+        for (i in 0 until node.childCount) {
+            val child = try { node.getChild(i) } catch (_: Exception) { null } ?: continue
+            try {
+                readNode(child, text, details, depth + 1)
+            } finally {
+                try { child.recycle() } catch (_: Exception) {}
+            }
+        }
+    }
+
+    private fun findButtonId(
+        node: AccessibilityNodeInfo,
+        suffix: String
+    ): String {
+        val id = node.viewIdResourceName.orEmpty()
+        if (id.endsWith(suffix)) return id
+        for (i in 0 until node.childCount) {
+            val child = try { node.getChild(i) } catch (_: Exception) { null } ?: continue
+            val found = try {
+                findButtonId(child, suffix)
+            } finally {
+                try { child.recycle() } catch (_: Exception) {}
+            }
+            if (found.isNotBlank()) return found
+        }
+        return ""
+    }
+
+    private fun extractAddress(source: String, vararg labels: String): String {
+        val lines = source.lines().map { it.trim() }.filter { it.isNotBlank() }
+        for (i in lines.indices) {
+            val line = lines[i]
+            val label = labels.firstOrNull { line.contains(it, ignoreCase = true) } ?: continue
+            val after = line.substringAfter(label).trim().trim(':', '-', ' ')
+            if (after.length >= 3) return after.take(100)
+            if (i + 1 < lines.size) return lines[i + 1].take(100)
+        }
+        return ""
+    }
+
+    private fun collectCall(
+        root: AccessibilityNodeInfo,
+        screenText: String,
+        screenDetails: String
+    ) {
+        val all = "$screenDetails\n$screenText"
+        val ids = Regex("""ai-list-card-([0-9]{4}[A-Za-z]{4})""")
+            .findAll(all)
+            .map { it.groupValues[1] }
+            .distinct()
+            .toList()
+        if (ids.isEmpty()) return
+
+        for (dispatchId in ids) {
+            val markerIndex = all.indexOf(dispatchId)
+            val block = if (markerIndex >= 0) {
+                all.substring(
+                    (markerIndex - 1400).coerceAtLeast(0),
+                    (markerIndex + 1800).coerceAtMost(all.length)
+                )
+            } else all
+
+            val amount = Regex("""([0-9][0-9,]*)\s*원""")
+                .find(block)?.groupValues?.get(1)?.plus("원").orEmpty()
+            if (amount.isBlank()) continue
+
+            val distance = Regex("""([0-9]+(?:\.[0-9]+)?\s*km)""", RegexOption.IGNORE_CASE)
+                .find(block)?.groupValues?.get(1).orEmpty()
+            val pickup = extractAddress(block, "픽업", "출발지", "가게")
+            val destination = extractAddress(block, "도착", "배달지", "목적지")
+            val acceptId = findButtonId(root, "ai-list-card-accept-$dispatchId")
+            val rejectId = findButtonId(root, "ai-list-card-reject-$dispatchId")
+
+            try {
+                database.saveCall(
+                    dispatchId = dispatchId,
+                    acceptButtonId = acceptId,
+                    rejectButtonId = rejectId,
+                    amount = amount,
+                    pickup = pickup,
+                    destination = destination,
+                    distance = distance,
+                    rawText = block.take(4000)
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("CallWatch", "배차 저장 실패: $dispatchId", e)
+            }
+        }
+
+        refreshOverlayWaitingCalls()
+        renderOverlayWaitingCalls()
+        val infos = overlayWaitingCalls
+        dispatchFloatingBar?.updateCalls(infos)
+        updateHighestCallOverlay(infos.sortedByDescending {
+            it.amount.filter(Char::isDigit).toLongOrNull() ?: 0L
+        })
+    }
+
+    private fun checkClickedButton(event: AccessibilityEvent) {
+        val source = try { event.source } catch (_: Exception) { null } ?: return
+        try {
+            val id = source.viewIdResourceName.orEmpty()
+            val match = Regex("""ai-list-card-(accept|reject)-([0-9]{4}[A-Za-z]{4})""")
+                .find(id) ?: return
+            val status = if (match.groupValues[1] == "accept") {
+                CallDatabase.STATUS_ACCEPTED
+            } else {
+                CallDatabase.STATUS_REJECTED
+            }
+            val dispatchId = match.groupValues[2]
+            val record = try {
+                database.getWaitingCalls().firstOrNull { it.dispatchId == dispatchId }
+            } catch (_: Exception) { null }
+            if (record != null) database.updateStatus(record.id, status)
+            refreshOverlayWaitingCalls()
+            renderOverlayWaitingCalls()
+            dispatchFloatingBar?.updateCalls(overlayWaitingCalls)
+            updateHighestCallOverlay(overlayWaitingCalls)
+        } finally {
+            try { source.recycle() } catch (_: Exception) {}
+        }
+    }
+
+    private fun showFullOverlay() {
+        if (fullOverlayView == null) showTransparentFullOverlay()
+    }
+
+    private fun addFullOverlay(
+        content: View,
+        width: Int,
+        height: Int,
+        flags: Int,
+        gravityValue: Int = Gravity.CENTER
+    ) {
+        if (!::windowManager.isInitialized) return
+        val params = WindowManager.LayoutParams(
+            width,
+            height,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            flags,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = gravityValue
+        }
+        try {
+            windowManager.addView(content, params)
+            fullOverlayView = content
+            fullOverlayParams = params
+        } catch (e: Exception) {
+            android.util.Log.e("CallWatch", "전체 투명창 표시 실패", e)
+            fullOverlayView = null
+            fullOverlayParams = null
+        }
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
 
