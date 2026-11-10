@@ -647,12 +647,15 @@ class CallAccessibilityService : AccessibilityService() {
                     deliveryCount,
                     deliveryFee
                 )
-                todayMetricsView?.text =
-                    "오늘 ${deliveryCount}건    ${formatter.format(deliveryFee)}원"
             }
         }
 
-        // 오늘 화면을 읽지 못하거나 기간 선택값이 달라도 주간 합계는 항상 표시한다.
+        // 배달 수입에 별도로 입력한 미션비와 프로모션비까지 포함한 합계 표시
+        val today = earningsDatabase.getDailySummary(date)
+        todayMetricsView?.text =
+            "오늘 ${today.deliveryCount}건    ${formatter.format(today.totalIncome)}원"
+
+        // 주간 합계도 배달 수입 + 미션비 + 프로모션비를 표시한다.
         val weekly = earningsDatabase.getWeeklySummary(date)
         weeklyMetricsView?.text =
             "주간 ${weekly.deliveryCount}건    ${formatter.format(weekly.totalIncome)}원"
