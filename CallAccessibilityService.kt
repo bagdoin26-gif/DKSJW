@@ -389,9 +389,8 @@ class CallAccessibilityService : AccessibilityService() {
         val eventPackage = event.packageName?.toString() ?: return
         val ownPackage = applicationContext.packageName
 
-        // 배민커넥트가 아닌 화면에서는 이벤트 종류나 rootInActiveWindow 상태와
-        // 관계없이 모든 보조창을 즉시 제거한다. 이전 창이 남아 있는 현상을 방지한다.
-        if (eventPackage != TARGET_PACKAGE) {
+        // 우리 보조 앱 자체 화면에서는 모든 오버레이를 숨긴다.
+        if (eventPackage == ownPackage) {
             targetForeground = false
             screenReadSuccess = false
             pendingWindowCheck?.let { handler.removeCallbacks(it) }
@@ -403,7 +402,23 @@ class CallAccessibilityService : AccessibilityService() {
             return
         }
 
-        // 우리 앱 로그인 및 모니터링이 켜져 있지 않으면 배민커넥트에서도 표시하지 않는다.
+        // 배민커넥트가 아닌 다른 앱에서는 지정한 전체화면 창만 숨긴다.
+        // 측면 플로팅 버튼은 로그인 및 모니터링이 켜져 있으면 계속 표시한다.
+        if (eventPackage != TARGET_PACKAGE) {
+            targetForeground = false
+            screenReadSuccess = false
+            hideFullOverlay()
+            hideOverlay()
+            if (isRunning()) {
+                dispatchFloatingBar?.show()
+            } else {
+                dispatchFloatingBar?.hide()
+            }
+            updateStatusDisplay()
+            return
+        }
+
+        // 배민커넥트에서도 로그인 및 모니터링이 꺼져 있으면 오버레이를 숨긴다.
         if (!isRunning()) {
             targetForeground = false
             dispatchFloatingBar?.hide()
