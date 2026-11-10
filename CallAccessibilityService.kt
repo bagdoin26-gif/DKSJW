@@ -693,7 +693,8 @@ class CallAccessibilityService : AccessibilityService() {
             setPadding(dp(10), dp(8), dp(10), dp(8))
             background = GradientDrawable().apply {
                 setColor(Color.argb(240, 255, 255, 255))
-                setStroke(dp(2), Color.rgb(0, 180, 70))                cornerRadius = dp(9).toFloat()
+                setStroke(dp(2), Color.rgb(0, 180, 70))
+                cornerRadius = dp(9).toFloat()
             }
         }
 
