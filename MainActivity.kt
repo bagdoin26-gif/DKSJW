@@ -545,7 +545,7 @@ class MainActivity : Activity() {
             detailLine("총수익: ${won(summary.totalIncome)}", 19f)
 
             earningsDb.getExtras(selectedDate).forEach { entry ->
-                detailLine("${entry.type} · ${entry.count}건 · ${won(entry.amount)} ${entry.memo}")
+                detailLine("${entry.type} · ${won(entry.amount)} ${entry.memo}")
             }
             val baseButton = Button(this).apply {
                 text = "이 날짜 배달 건수 / 금액 입력"
@@ -726,10 +726,6 @@ class MainActivity : Activity() {
     }
 
     private fun showExtraEntryDialog(date: String, type: String, onSaved: () -> Unit) {
-        val countInput = EditText(this).apply {
-            hint = "${type} 건수"
-            inputType = InputType.TYPE_CLASS_NUMBER
-        }
         val amountInput = EditText(this).apply {
             hint = "${type} 금액 (원)"
             inputType = InputType.TYPE_CLASS_NUMBER
@@ -738,7 +734,6 @@ class MainActivity : Activity() {
         val fields = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(8), dp(20), dp(8))
-            addView(countInput)
             addView(amountInput)
             addView(memoInput)
         }
@@ -747,12 +742,12 @@ class MainActivity : Activity() {
             .setView(fields)
             .setNegativeButton("취소", null)
             .setPositiveButton("추가") { _, _ ->
-                val count = countInput.text.toString().toIntOrNull()
                 val amount = amountInput.text.toString().toLongOrNull()
-                if (count == null || amount == null || count < 0 || amount < 0) {
-                    Toast.makeText(this, "건수와 금액을 올바르게 입력하세요.", Toast.LENGTH_SHORT).show()
+                if (amount == null || amount < 0) {
+                    Toast.makeText(this, "금액을 올바르게 입력하세요.", Toast.LENGTH_SHORT).show()
                 } else {
-                    earningsDb.addExtra(date, type, count, amount, memoInput.text.toString())
+                    // 미션비와 프로모션비는 금액만 기록하며 완료 건수에는 포함하지 않습니다.
+                    earningsDb.addExtra(date, type, 0, amount, memoInput.text.toString())
                     onSaved()
                 }
             }.show()
