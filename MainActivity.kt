@@ -545,7 +545,47 @@ class MainActivity : Activity() {
             detailLine("총수익: ${won(summary.totalIncome)}", 19f)
 
             earningsDb.getExtras(selectedDate).forEach { entry ->
-                detailLine("${entry.type} · ${won(entry.amount)} ${entry.memo}")
+                val entryRow = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                val entryText = TextView(this).apply {
+                    text = "${entry.type} · ${won(entry.amount)}" +
+                        if (entry.memo.isNotBlank()) " · ${entry.memo}" else ""
+                    textSize = 13f
+                    setTextColor(white)
+                    setPadding(dp(3), dp(5), dp(3), dp(5))
+                }
+                entryRow.addView(entryText, LinearLayout.LayoutParams(0, -2, 1f))
+                val editButton = Button(this).apply {
+                    text = "수정"
+                    isAllCaps = false
+                    setOnClickListener {
+                        showEditExtraDialog(selectedDate, entry) {
+                            refreshDetail()
+                            refreshCalendar()
+                        }
+                    }
+                }
+                entryRow.addView(editButton)
+                val deleteButton = Button(this).apply {
+                    text = "삭제"
+                    isAllCaps = false
+                    setOnClickListener {
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("${entry.type} 삭제")
+                            .setMessage("${won(entry.amount)} 항목만 삭제할까요? 다른 기록은 유지됩니다.")
+                            .setNegativeButton("취소", null)
+                            .setPositiveButton("삭제") { _, _ ->
+                                earningsDb.deleteExtra(entry.id)
+                                refreshDetail()
+                                refreshCalendar()
+                            }
+                            .show()
+                    }
+                }
+                entryRow.addView(deleteButton)
+                detail.addView(entryRow)
             }
             val baseButton = Button(this).apply {
                 text = "이 날짜 배달 건수 / 금액 입력"
@@ -773,6 +813,44 @@ class MainActivity : Activity() {
                     onSaved()
                 }
             }.show()
+    }
+
+    private fun showEditExtraDialog(
+        date: String,
+        entry: DailyEarningsDatabase.ExtraEntry,
+        onSaved: () -> Unit
+    ) {
+        val amountInput = EditText(this).apply {
+            hint = "${entry.type} 금액 (원)"
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(entry.amount.toString())
+        }
+        val memoInput = EditText(this).apply {
+            hint = "메모 (선택)"
+            setText(entry.memo)
+        }
+        val fields = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+            addView(amountInput)
+            addView(memoInput)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("${date} ${entry.type} 수정")
+            .setView(fields)
+            .setNegativeButton("취소", null)
+            .setPositiveButton("저장") { _, _ ->
+                val amount = amountInput.text.toString().toLongOrNull()
+                if (amount == null || amount < 0) {
+                    Toast.makeText(this, "금액을 올바르게 입력하세요.", Toast.LENGTH_SHORT).show()
+                } else {
+                    earningsDb.updateExtra(
+                        entry.id, entry.type, entry.count, amount, memoInput.text.toString()
+                    )
+                    onSaved()
+                }
+            }
+            .show()
     }
 
     // 설정
