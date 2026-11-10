@@ -510,11 +510,12 @@ class CallAccessibilityService : AccessibilityService() {
         pendingWindowCheck = checkWindow
         handler.postDelayed(checkWindow, 100L)
     }
-    onServiceConnected()
-    * 로그인 후 배민커넥트 위에 남는 빈 투명 전체 레이어.
-    * FLAG_NOT_TOUCHABLE로 화면 터치를 가로채지 않고 배민커넥트에 통과시킨다.
-    * 실제 조작은 배민커넥트 원래 화면에서 수행하며, 홈 화면 보조창은 별도 유지한다.
-    */
+
+    /**
+     * 로그인 후 배민커넥트 위에 남는 빈 투명 전체 레이어.
+     * FLAG_NOT_TOUCHABLE로 화면 터치를 가로채지 않고 배민커넥트에 통과시킨다.
+     * 실제 조작은 배민커넥트 원래 화면에서 수행하며, 홈 화면 보조창은 별도 유지한다.
+     */
     private fun showTransparentFullOverlay() {
         if (fullOverlayView != null) hideFullOverlay()
 
