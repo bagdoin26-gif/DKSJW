@@ -384,8 +384,8 @@ class CallAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val ownPackage = applicationContext.packageName
-        val eventPackage = event?.packageName?.toString()
+        val currentEvent = event
+        val eventPackage = currentEvent?.packageName?.toString()
 
         // 배민커넥트가 아닌 화면(우리 앱, 다른 앱, 휴대폰 홈 화면)에서는
         // 전체화면 창과 측면 플로팅 버튼을 모두 숨긴다.
@@ -413,7 +413,7 @@ class CallAccessibilityService : AccessibilityService() {
 
                 android.util.Log.i(
                     "EarningsTabDebug",
-                    "EVENT type=${event.eventType}, package=$eventPackage, text=${event.text}"
+                    "EVENT type=${currentEvent!!.eventType}, package=$eventPackage, text=${currentEvent!!.text}"
                 )
         
                 if (eventPackage == TARGET_PACKAGE) {
@@ -424,8 +424,8 @@ class CallAccessibilityService : AccessibilityService() {
                     showFullOverlay()
                     hideOverlay()
         
-                    if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
-                        checkClickedButton(event)
+                    if (currentEvent!!.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+                        checkClickedButton(currentEvent!!)
                     }
         
                     val root = rootInActiveWindow
@@ -453,11 +453,11 @@ class CallAccessibilityService : AccessibilityService() {
                                 .putLong("latest_screen_time", System.currentTimeMillis())
                                 .apply()
         
-                            val eventSource = event.source
+                            val eventSource = currentEvent!!.source
                             try {
                                 android.util.Log.i(
                                     "EarningsTabDebug",
-                                    "TYPE=${event.eventType}, CHANGE=${event.contentChangeTypes}, " +
+                                    "TYPE=${currentEvent!!.eventType}, CHANGE=${currentEvent!!.contentChangeTypes}, " +
                                             "TEXT=${eventSource?.text}, DESC=${eventSource?.contentDescription}, " +
                                             "ID=${eventSource?.viewIdResourceName}"
                                 )
@@ -481,7 +481,7 @@ class CallAccessibilityService : AccessibilityService() {
                     return
                 }
         
-                if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+                if (currentEvent!!.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         
                 pendingWindowCheck?.let { handler.removeCallbacks(it) }
         
