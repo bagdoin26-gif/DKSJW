@@ -401,9 +401,16 @@ class CallAccessibilityService : AccessibilityService() {
             return
         }
 
-        // 창의 표시/숨김은 화면 전환 이벤트에서 한 번만 판정한다.
-        // 일반 콘텐츠 이벤트마다 오버레이를 다시 만들지 않는다.
-        if (currentEvent.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+        // 우리 오버레이/앱에서 발생한 이벤트는 전면 앱 변경으로 취급하지 않는다.
+        // 이를 화면 전환으로 처리하면 두 오버레이를 스스로 숨기는 반복이 발생한다.
+        if (eventPackage == ownPackage) return
+
+        // 창의 표시/숨김은 외부 앱의 화면 전환 이벤트에서만 판정한다.
+        // 일반 콘텐츠 이벤트와 우리 앱 이벤트는 전환 판정에서 제외한다.
+        if (
+            currentEvent.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            eventPackage != null
+        ) {
             pendingWindowCheck?.let { handler.removeCallbacks(it) }
 
             // rootInActiveWindow는 접근성 오버레이 자신을 반환할 수 있으므로
@@ -452,9 +459,6 @@ class CallAccessibilityService : AccessibilityService() {
             pendingWindowCheck = checkWindow
             handler.postDelayed(checkWindow, 350L)
         }
-
-        // 우리 앱 화면의 일반 이벤트에서는 데이터 수집을 하지 않는다.
-        if (eventPackage == ownPackage) return
 
         // 배민커넥트 외부에서는 기존 보조창만 유지하고 수집하지 않는다.
         if (eventPackage != TARGET_PACKAGE) return
