@@ -391,6 +391,14 @@ class CallAccessibilityService : AccessibilityService() {
 
         if (eventPackage == ownPackage) return
 
+        // 보조 앱 로그인 및 모니터링이 켜진 경우에만 다른 앱 위에 표시한다.
+        if (!isRunning()) {
+            dispatchFloatingBar?.hide()
+            hideFullOverlay()
+            hideOverlay()
+            return
+        }
+
         android.util.Log.i(
             "EarningsTabDebug",
             "EVENT type=${event.eventType}, package=$eventPackage, text=${event.text}"
@@ -495,11 +503,19 @@ class CallAccessibilityService : AccessibilityService() {
                 }
 
                 else -> {
+                    // 배민커넥트가 아닌 다른 앱에서도 로그인 상태라면
+                    // 터치 통과형 전체화면 레이어와 옆면 플로팅 버튼을 유지한다.
                     targetForeground = false
-                    dispatchFloatingBar?.hide()
                     screenReadSuccess = false
-                    if (isRunning()) showOverlay() else hideOverlay()
-                    hideFullOverlay()
+                    if (isRunning()) {
+                        dispatchFloatingBar?.show()
+                        showTransparentFullOverlay()
+                        showOverlay()
+                    } else {
+                        dispatchFloatingBar?.hide()
+                        hideFullOverlay()
+                        hideOverlay()
+                    }
                 }
             }
 
