@@ -457,7 +457,7 @@ class CallAccessibilityService : AccessibilityService() {
             }
 
             pendingWindowCheck = checkWindow
-            handler.postDelayed(checkWindow, 350L)
+            handler.postDelayed(checkWindow, 100L)
         }
 
         // 배민커넥트 외부에서는 기존 보조창만 유지하고 수집하지 않는다.
