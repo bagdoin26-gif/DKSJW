@@ -384,155 +384,126 @@ class CallAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val currentEvent = event
-        val eventPackage = currentEvent?.packageName?.toString()
+        val currentEvent = event ?: return
+        val eventPackage = currentEvent.packageName?.toString()
+        val ownPackage = applicationContext.packageName
 
-        // 배민커넥트가 아닌 화면(우리 앱, 다른 앱, 휴대폰 홈 화면)에서는
-        // 전체화면 창과 측면 플로팅 버튼을 모두 숨긴다.
-        if (eventPackage != TARGET_PACKAGE) {
-            targetForeground = false
-            screenReadSuccess = false
+        // 화면 전환 이벤트에서만 실제 전면 앱을 다시 확인한다.
+        // 알림창/키보드 등 다른 패키지의 일반 접근성 이벤트 때문에
+        // 배민커넥트 위의 창이 순간적으로 사라지는 것을 방지한다.
+        if (currentEvent.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             pendingWindowCheck?.let { handler.removeCallbacks(it) }
-            pendingWindowCheck = null
-            dispatchFloatingBar?.hide()
-            hideFullOverlay()
-            hideOverlay()
-            updateStatusDisplay()
-            return
-        }
 
-        // 배민커넥트에서도 로그인 및 모니터링이 꺼져 있으면 모두 숨긴다.
-        if (!isRunning()) {
-            targetForeground = false
-            dispatchFloatingBar?.hide()
-            hideFullOverlay()
-            hideOverlay()
-            updateStatusDisplay()
-            return
-        }
+            val checkWindow = Runnable {
+                val activeRoot = rootInActiveWindow
+                val activePackage = try {
+                    activeRoot?.packageName?.toString() ?: eventPackage
+                } finally {
+                    try { activeRoot?.recycle() } catch (_: Exception) {}
+                }
 
-                android.util.Log.i(
-                    "EarningsTabDebug",
-                    "EVENT type=${currentEvent!!.eventType}, package=$eventPackage, text=${currentEvent!!.text}"
-                )
-        
-                if (eventPackage == TARGET_PACKAGE) {
-                    pendingWindowCheck?.let { handler.removeCallbacks(it) }
-                    pendingWindowCheck = null
-                    targetForeground = true
+                val isTarget = activePackage == TARGET_PACKAGE
+                targetForeground = isTarget && isRunning()
+
+                if (targetForeground) {
                     dispatchFloatingBar?.show()
                     showFullOverlay()
                     hideOverlay()
-        
-                    if (currentEvent!!.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
-                        checkClickedButton(currentEvent!!)
-                    }
-        
-                    val root = rootInActiveWindow
-                    if (root == null) {
-                        screenReadSuccess = false
-                        updateStatusDisplay()
-                        return
-                    }
-        
-                    try {
-                        val extractedText = StringBuilder()
-                        val extractedDetails = StringBuilder()
-        
-                        readNode(root, extractedText, extractedDetails, 0)
-        
-                        val screenText = extractedText.toString().trim()
-                        val screenDetails = extractedDetails.toString().trim()
-                        screenReadSuccess = screenText.isNotBlank()
-        
-                        if (screenReadSuccess) {
-                            preferences.edit()
-                                .putString("latest_screen_text", screenText)
-                                .putString("latest_screen_details", screenDetails)
-                                .putString("latest_screen_package", eventPackage)
-                                .putLong("latest_screen_time", System.currentTimeMillis())
-                                .apply()
-        
-                            val eventSource = currentEvent!!.source
-                            try {
-                                android.util.Log.i(
-                                    "EarningsTabDebug",
-                                    "TYPE=${currentEvent!!.eventType}, CHANGE=${currentEvent!!.contentChangeTypes}, " +
-                                            "TEXT=${eventSource?.text}, DESC=${eventSource?.contentDescription}, " +
-                                            "ID=${eventSource?.viewIdResourceName}"
-                                )
-                            } finally {
-                                eventSource?.recycle()
-                            }
-        
-                            updateTodayMetrics(screenText)
-        
-                            collectCall(
-                                root = root,
-                                screenText = screenText,
-                                screenDetails = screenDetails
-                            )
-                        }
-                    } finally {
-                        root.recycle()
-                    }
-        
-                    updateStatusDisplay()
-                    return
+                } else {
+                    screenReadSuccess = false
+                    dispatchFloatingBar?.hide()
+                    hideFullOverlay()
+                    hideOverlay()
                 }
-        
-                if (currentEvent!!.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        
-                pendingWindowCheck?.let { handler.removeCallbacks(it) }
-        
-                val checkWindow = Runnable {
-                    val activeRoot = rootInActiveWindow
-                    val activePackage = activeRoot?.packageName?.toString()
-        
-                    try {
-                        activeRoot?.recycle()
-                    } catch (_: Exception) {
-                    }
-        
-                    when {
-                        activePackage == TARGET_PACKAGE -> {
-                            targetForeground = true
-                            dispatchFloatingBar?.show()
-                            screenReadSuccess = false
-                            showFullOverlay()
-                            hideOverlay()
-                        }
-        
-                        activePackage == null -> {
-                        }
-        
-                        activePackage == ownPackage -> {
-                            targetForeground = false
-                            dispatchFloatingBar?.hide()
-                            screenReadSuccess = false
-                            hideFullOverlay()
-                            hideOverlay()
-                        }
-        
-                        else -> {
-                            // 배민커넥트가 아닌 다른 앱에서는 전체화면 레이어와
-                            // 측면 플로팅 버튼을 모두 숨긴다.
-                            targetForeground = false
-                            screenReadSuccess = false
-                            dispatchFloatingBar?.hide()
-                            hideFullOverlay()
-                            hideOverlay()
-                        }
-                    }
-        
-                    pendingWindowCheck = null
-                    updateStatusDisplay()
-                }
-        
-                pendingWindowCheck = checkWindow
-                handler.postDelayed(checkWindow, 100L)
+
+                pendingWindowCheck = null
+                updateStatusDisplay()
             }
-        
+
+            pendingWindowCheck = checkWindow
+            handler.postDelayed(checkWindow, 250L)
+        }
+
+        // 배민커넥트가 아닌 패키지의 일반 이벤트는 화면 전환으로 간주하지 않는다.
+        // 실제 화면 전환 여부는 위의 지연된 WINDOW_STATE_CHANGED 확인에서 처리한다.
+        if (eventPackage != TARGET_PACKAGE) return
+
+        if (!isRunning()) {
+            targetForeground = false
+            screenReadSuccess = false
+            dispatchFloatingBar?.hide()
+            hideFullOverlay()
+            hideOverlay()
+            updateStatusDisplay()
+            return
+        }
+
+        pendingWindowCheck?.let { handler.removeCallbacks(it) }
+        pendingWindowCheck = null
+        targetForeground = true
+        dispatchFloatingBar?.show()
+        showFullOverlay()
+        hideOverlay()
+
+        android.util.Log.i(
+            "EarningsTabDebug",
+            "EVENT type=${currentEvent.eventType}, package=$eventPackage, text=${currentEvent.text}"
+        )
+
+        if (currentEvent.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+            checkClickedButton(currentEvent)
+        }
+
+        val root = rootInActiveWindow
+        if (root == null) {
+            screenReadSuccess = false
+            updateStatusDisplay()
+            return
+        }
+
+        try {
+            val extractedText = StringBuilder()
+            val extractedDetails = StringBuilder()
+
+            readNode(root, extractedText, extractedDetails, 0)
+
+            val screenText = extractedText.toString().trim()
+            val screenDetails = extractedDetails.toString().trim()
+            screenReadSuccess = screenText.isNotBlank()
+
+            if (screenReadSuccess) {
+                preferences.edit()
+                    .putString("latest_screen_text", screenText)
+                    .putString("latest_screen_details", screenDetails)
+                    .putString("latest_screen_package", eventPackage)
+                    .putLong("latest_screen_time", System.currentTimeMillis())
+                    .apply()
+
+                val eventSource = currentEvent.source
+                try {
+                    android.util.Log.i(
+                        "EarningsTabDebug",
+                        "TYPE=${currentEvent.eventType}, CHANGE=${currentEvent.contentChangeTypes}, " +
+                                "TEXT=${eventSource?.text}, DESC=${eventSource?.contentDescription}, " +
+                                "ID=${eventSource?.viewIdResourceName}"
+                    )
+                } finally {
+                    try { eventSource?.recycle() } catch (_: Exception) {}
+                }
+
+                updateTodayMetrics(screenText)
+
+                collectCall(
+                    root = root,
+                    screenText = screenText,
+                    screenDetails = screenDetails
+                )
+            }
+        } finally {
+            try { root.recycle() } catch (_: Exception) {}
+        }
+
+        updateStatusDisplay()
     }
 
     /**
