@@ -56,7 +56,7 @@ class DailyEarningsDatabase(context: Context) :
     companion object {
         const val TYPE_PROMOTION = "프로모션"
         const val TYPE_MISSION = "미션비"
-        private const val KEEP_DAYS = 60
+        private const val KEEP_DAYS = 3650
         private const val DATE_PATTERN = "yyyy-MM-dd"
     }
 
