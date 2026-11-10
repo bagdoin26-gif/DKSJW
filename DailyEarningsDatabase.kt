@@ -128,7 +128,8 @@ class DailyEarningsDatabase(context: Context) :
         require(type == TYPE_PROMOTION || type == TYPE_MISSION)
         val values = ContentValues().apply {
             put("type", type)
-            put("amount", amount)
+            put("count", count.coerceAtLeast(0))
+            put("amount", amount.coerceAtLeast(0L))
             put("memo", memo)
         }
         writableDatabase.update("daily_extra", values, "id=?", arrayOf(id.toString()))
