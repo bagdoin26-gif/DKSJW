@@ -1251,7 +1251,8 @@ class CallAccessibilityService : AccessibilityService() {
 
     private fun createResizeListener(): View.OnTouchListener {
 
-        var startWidth = 0        var touchX = 0f
+        var startWidth = 0
+        var touchX = 0f
 
         return View.OnTouchListener { _, event ->
 
