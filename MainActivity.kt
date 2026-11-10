@@ -3,6 +3,7 @@ package com.delivery.callwatch
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.DatePickerDialog
 import android.content.Intent
 import android.os.Bundle
 import android.graphics.Color
@@ -15,6 +16,11 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.widget.*
+import java.text.NumberFormat
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : Activity() {
 
@@ -439,24 +445,312 @@ class MainActivity : Activity() {
         }
     }
 
-    // 실적/일별 기록 임시 화면
-    private fun showFeaturePage(title: String) {
-        createSubPage(title)
+    // 오늘·주간 실적 및 날짜별 수입 기록
+    private val earningsDb by lazy { DailyEarningsDatabase(this) }
 
-        addPageText(
-            "이 메뉴의 실제 기능은 다음 단계에서 연결합니다.",
-            muted
-        )
+    private fun dateKey(calendar: Calendar): String =
+        SimpleDateFormat("yyyy-MM-dd", Locale.KOREA).format(calendar.time)
 
-        if (title == "오늘·주간 실적") {
-            addPageText("오늘 완료 건수", white, 18f, true)
-            addPageText("오늘 총수익", white, 18f, true)
-            addPageText("수요일 ~ 화요일 주간 실적", muted)
-        } else {
-            addPageText("날짜별 기록", white, 18f, true)
-            addPageText("프로모션비 추가", muted)
-            addPageText("미션비 추가", muted)
+    private fun parseDateKey(value: String): Calendar =
+        Calendar.getInstance().apply {
+            time = SimpleDateFormat("yyyy-MM-dd", Locale.KOREA).parse(value) ?: Date()
         }
+
+    private fun won(value: Long): String =
+        NumberFormat.getIntegerInstance(Locale.KOREA).format(value) + "원"
+
+    private fun showFeaturePage(title: String) {
+        if (title == "오늘·주간 실적") showPerformancePage()
+        else showDailyRecordsPage()
+    }
+
+    private fun showPerformancePage() {
+        createSubPage("오늘·주간 실적")
+        val todayKey = dateKey(Calendar.getInstance())
+        val today = earningsDb.getDailySummary(todayKey)
+        val week = earningsDb.getWeeklySummary(todayKey)
+
+        addPageText("오늘 실적", white, 20f, true)
+        addPageText("완료 건수  ${today.deliveryCount}건", Color.rgb(70, 220, 150), 19f, true)
+        addPageText("배달 수입  ${won(today.deliveryFee)}", white, 16f)
+        addPageText("미션비  ${won(today.mission)}   ·   프로모션비  ${won(today.promotion)}", muted, 14f)
+        addPageText("오늘 총수익  ${won(today.totalIncome)}", white, 22f, true)
+
+        addPageText("이번 주 실적 (수요일 ~ 화요일)", white, 19f, true)
+        addPageText("${week.startDate} ~ ${week.endDate}", muted, 13f)
+        addPageText("주간 완료 건수  ${week.deliveryCount}건", Color.rgb(70, 220, 150), 20f, true)
+        addPageText("주간 총수익  ${won(week.totalIncome)}", white, 23f, true)
+        addPageText("배달 ${won(week.deliveryFee)}  /  미션 ${won(week.mission)}  /  프로모션 ${won(week.promotion)}", muted, 13f)
+
+        addPageText("요일별 수익 그래프", white, 18f, true)
+        val start = parseDateKey(week.startDate)
+        val summaries = (0..6).map { offset ->
+            val day = (start.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, offset) }
+            earningsDb.getDailySummary(dateKey(day))
+        }
+        val maxIncome = (summaries.maxOfOrNull { it.totalIncome } ?: 0L).coerceAtLeast(1L)
+        val dayNames = listOf("수", "목", "금", "토", "일", "월", "화")
+        summaries.forEachIndexed { index, summary ->
+            addPageText("${dayNames[index]}요일  ·  ${summary.deliveryCount}건  ·  ${won(summary.totalIncome)}", white, 13f)
+            val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+                max = 100
+                progress = ((summary.totalIncome * 100L) / maxIncome).toInt().coerceIn(0, 100)
+                progressTintList = android.content.res.ColorStateList.valueOf(Color.rgb(0, 190, 145))
+            }
+            mainLayout.addView(bar, LinearLayout.LayoutParams(-1, dp(12)).apply {
+                bottomMargin = dp(8)
+            })
+        }
+        addPageButton("일별 기록 / 달력") { showDailyRecordsPage() }
+    }
+
+    private fun showDailyRecordsPage(initialDate: String = dateKey(Calendar.getInstance())) {
+        var selectedDate = initialDate
+        val month = parseDateKey(initialDate).apply { set(Calendar.DAY_OF_MONTH, 1) }
+
+        createSubPage("일별 기록 · 달력")
+        val monthLabel = addPageText("", white, 19f, true)
+        val calendarGrid = GridLayout(this).apply {
+            columnCount = 7
+            useDefaultMargins = true
+        }
+        mainLayout.addView(calendarGrid)
+        addPageText("선택한 날짜 실적", white, 18f, true)
+        val detail = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = makeBackground(tileColor, 14)
+        }
+        mainLayout.addView(detail)
+
+        fun refreshDetail() {
+            detail.removeAllViews()
+            val summary = earningsDb.getDailySummary(selectedDate)
+            fun detailLine(value: String, size: Float = 14f) {
+                detail.addView(TextView(this).apply {
+                    text = value
+                    textSize = size
+                    setTextColor(white)
+                    setPadding(dp(3), dp(5), dp(3), dp(5))
+                })
+            }
+            detailLine(selectedDate, 16f)
+            detailLine("완료 건수: ${summary.deliveryCount}건")
+            detailLine("배달 수입: ${won(summary.deliveryFee)}")
+            detailLine("미션비: ${won(summary.mission)}")
+            detailLine("프로모션비: ${won(summary.promotion)}")
+            detailLine("총수익: ${won(summary.totalIncome)}", 19f)
+
+            earningsDb.getExtras(selectedDate).forEach { entry ->
+                detailLine("${entry.type} · ${entry.count}건 · ${won(entry.amount)} ${entry.memo}")
+            }
+            val baseButton = Button(this).apply {
+                text = "이 날짜 배달 건수 / 금액 입력"
+                setOnClickListener {
+                    showBaseEntryDialog(selectedDate) {
+                        refreshDetail()
+                        refreshCalendar()
+                    }
+                }
+            }
+            val missionButton = Button(this).apply {
+                text = "＋ 미션비 추가"
+                setOnClickListener {
+                    showExtraEntryDialog(selectedDate, DailyEarningsDatabase.TYPE_MISSION) {
+                        refreshDetail()
+                        refreshCalendar()
+                    }
+                }
+            }
+            val promoButton = Button(this).apply {
+                text = "＋ 프로모션비 추가"
+                setOnClickListener {
+                    showExtraEntryDialog(selectedDate, DailyEarningsDatabase.TYPE_PROMOTION) {
+                        refreshDetail()
+                        refreshCalendar()
+                    }
+                }
+            }
+            detail.addView(baseButton)
+            detail.addView(missionButton)
+            detail.addView(promoButton)
+        }
+
+        fun refreshCalendar() {
+            calendarGrid.removeAllViews()
+            monthLabel.text = SimpleDateFormat("yyyy년 M월", Locale.KOREA).format(month.time)
+            listOf("일", "월", "화", "수", "목", "금", "토").forEach { label ->
+                calendarGrid.addView(TextView(this).apply {
+                    text = label
+                    gravity = Gravity.CENTER
+                    setTextColor(muted)
+                    textSize = 12f
+                }, GridLayout.LayoutParams().apply {
+                    width = 0
+                    height = dp(30)
+                    columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                })
+            }
+            val firstOffset = month.get(Calendar.DAY_OF_WEEK) - 1
+            val totalDays = month.getActualMaximum(Calendar.DAY_OF_MONTH)
+            for (slot in 0 until firstOffset + totalDays) {
+                if (slot < firstOffset) {
+                    calendarGrid.addView(View(this), GridLayout.LayoutParams().apply {
+                        width = 0
+                        height = dp(58)
+                        columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                    })
+                } else {
+                    val dayNumber = slot - firstOffset + 1
+                    val dayCalendar = (month.clone() as Calendar).apply {
+                        set(Calendar.DAY_OF_MONTH, dayNumber)
+                    }
+                    val key = dateKey(dayCalendar)
+                    val summary = earningsDb.getDailySummary(key)
+                    val cell = LinearLayout(this).apply {
+                        orientation = LinearLayout.VERTICAL
+                        gravity = Gravity.CENTER
+                        setPadding(dp(2), dp(3), dp(2), dp(3))
+                        background = makeBackground(
+                            if (key == selectedDate) Color.rgb(0, 125, 95) else tileColor, 8
+                        )
+                        setOnClickListener {
+                            selectedDate = key
+                            refreshDetail()
+                            refreshCalendar()
+                        }
+                    }
+                    cell.addView(TextView(this).apply {
+                        text = dayNumber.toString()
+                        gravity = Gravity.CENTER
+                        setTextColor(white)
+                        textSize = 13f
+                    })
+                    if (summary.deliveryCount > 0 || summary.totalIncome > 0) {
+                        cell.addView(TextView(this).apply {
+                            text = if (summary.totalIncome > 0) "${summary.totalIncome / 1000}천" else "${summary.deliveryCount}건"
+                            gravity = Gravity.CENTER
+                            setTextColor(Color.rgb(100, 230, 180))
+                            textSize = 9f
+                        })
+                    }
+                    calendarGrid.addView(cell, GridLayout.LayoutParams().apply {
+                        width = 0
+                        height = dp(58)
+                        columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                        setMargins(dp(1), dp(1), dp(1), dp(1))
+                    })
+                }
+            }
+        }
+
+        val monthButtons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val previous = Button(this).apply {
+            text = "◀ 이전 달"
+            setOnClickListener {
+                month.add(Calendar.MONTH, -1)
+                refreshCalendar()
+            }
+        }
+        val next = Button(this).apply {
+            text = "다음 달 ▶"
+            setOnClickListener {
+                month.add(Calendar.MONTH, 1)
+                refreshCalendar()
+            }
+        }
+        monthButtons.addView(previous, LinearLayout.LayoutParams(0, -2, 1f))
+        monthButtons.addView(next, LinearLayout.LayoutParams(0, -2, 1f))
+        mainLayout.addView(monthButtons, 2)
+        addPageButton("날짜 직접 선택") {
+            DatePickerDialog(
+                this,
+                { _, year, monthIndex, day ->
+                    val chosen = Calendar.getInstance().apply {
+                        set(year, monthIndex, day)
+                    }
+                    selectedDate = dateKey(chosen)
+                    month.time = chosen.time
+                    month.set(Calendar.DAY_OF_MONTH, 1)
+                    refreshCalendar()
+                    refreshDetail()
+                },
+                month.get(Calendar.YEAR),
+                month.get(Calendar.MONTH),
+                parseDateKey(selectedDate).get(Calendar.DAY_OF_MONTH)
+            ).show()
+        }
+        refreshCalendar()
+        refreshDetail()
+    }
+
+    private fun showBaseEntryDialog(date: String, onSaved: () -> Unit) {
+        val current = earningsDb.getDailySummary(date)
+        val countInput = EditText(this).apply {
+            hint = "완료 건수"
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(current.deliveryCount.toString())
+        }
+        val amountInput = EditText(this).apply {
+            hint = "배달 수입 (원)"
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(current.deliveryFee.toString())
+        }
+        val fields = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+            addView(countInput)
+            addView(amountInput)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("${date} 배달 실적 입력")
+            .setView(fields)
+            .setNegativeButton("취소", null)
+            .setPositiveButton("저장") { _, _ ->
+                val count = countInput.text.toString().toIntOrNull()
+                val amount = amountInput.text.toString().toLongOrNull()
+                if (count == null || amount == null || count < 0 || amount < 0) {
+                    Toast.makeText(this, "건수와 금액을 올바르게 입력하세요.", Toast.LENGTH_SHORT).show()
+                } else {
+                    earningsDb.updateBaseFromScreen(date, count, amount)
+                    onSaved()
+                }
+            }.show()
+    }
+
+    private fun showExtraEntryDialog(date: String, type: String, onSaved: () -> Unit) {
+        val countInput = EditText(this).apply {
+            hint = "${type} 건수"
+            inputType = InputType.TYPE_CLASS_NUMBER
+        }
+        val amountInput = EditText(this).apply {
+            hint = "${type} 금액 (원)"
+            inputType = InputType.TYPE_CLASS_NUMBER
+        }
+        val memoInput = EditText(this).apply { hint = "메모 (선택)" }
+        val fields = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+            addView(countInput)
+            addView(amountInput)
+            addView(memoInput)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("${date} ${type} 추가")
+            .setView(fields)
+            .setNegativeButton("취소", null)
+            .setPositiveButton("추가") { _, _ ->
+                val count = countInput.text.toString().toIntOrNull()
+                val amount = amountInput.text.toString().toLongOrNull()
+                if (count == null || amount == null || count < 0 || amount < 0) {
+                    Toast.makeText(this, "건수와 금액을 올바르게 입력하세요.", Toast.LENGTH_SHORT).show()
+                } else {
+                    earningsDb.addExtra(date, type, count, amount, memoInput.text.toString())
+                    onSaved()
+                }
+            }.show()
     }
 
     // 설정
