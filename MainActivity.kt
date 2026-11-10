@@ -691,8 +691,7 @@ class MainActivity : Activity() {
 
     private fun showBaseEntryDialog(date: String, onSaved: () -> Unit) {
         val current = earningsDb.getDailySummary(date)
-        val alreadyAddedCount = earningsDb.getExtras(date).sumOf { it.count }
-        val baseCount = (current.deliveryCount - alreadyAddedCount).coerceAtLeast(0)
+        val baseCount = current.deliveryCount
         val countInput = EditText(this).apply {
             hint = "완료 건수"
             inputType = InputType.TYPE_CLASS_NUMBER
