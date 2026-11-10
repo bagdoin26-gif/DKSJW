@@ -824,9 +824,12 @@ class CallAccessibilityService : AccessibilityService() {
             isAllCaps = false
             setPadding(dp(4), 0, dp(4), 0)
             setOnClickListener {
+                val minWidthDp = minOverlayWidthDp()
+                val maxWidthDp = maxOverlayWidthDp()
                 val sizeBar = android.widget.SeekBar(this@CallAccessibilityService).apply {
-                    max = 300
-                    progress = (preferences.getInt("overlay_width", 320) - 220).coerceIn(0, 300)
+                    max = (maxWidthDp - minWidthDp).coerceAtLeast(0)
+                    progress = (preferences.getInt("overlay_width", 320)
+                        .coerceIn(minWidthDp, maxWidthDp) - minWidthDp)
                 }
                 val opacityBar = android.widget.SeekBar(this@CallAccessibilityService).apply {
                     max = 80
@@ -898,7 +901,8 @@ class CallAccessibilityService : AccessibilityService() {
                     text = "적용"
                     isAllCaps = false
                     setOnClickListener {
-                        val width = 220 + sizeBar.progress
+                        val width = (minWidthDp + sizeBar.progress)
+                            .coerceIn(minWidthDp, maxWidthDp)
                         val opacity = 0.2f + opacityBar.progress / 100f
 
                         preferences.edit()
@@ -913,10 +917,11 @@ class CallAccessibilityService : AccessibilityService() {
                         }
 
                         overlayParams?.let { params ->
-                            params.width = dp(width)
-                            try {
-                                windowManager.updateViewLayout(root, params)
-                            } catch (_: Exception) {}
+                            params.width = dp(width).coerceAtMost(maxOverlayWidthPx())
+                            params.x = params.x.coerceIn(
+                                0, (resources.displayMetrics.widthPixels - params.width).coerceAtLeast(0)
+                            )
+                            updateOverlayLayout()
                         }
 
                         try {
@@ -1017,9 +1022,10 @@ class CallAccessibilityService : AccessibilityService() {
 
         root.addView(panel, FrameLayout.LayoutParams(-1, -2))
 
-        val width = preferences.getInt("overlay_width", 320).coerceIn(220, 520)
+        val width = preferences.getInt("overlay_width", 320)
+            .coerceIn(minOverlayWidthDp(), maxOverlayWidthDp())
         val params = WindowManager.LayoutParams(
-            dp(width),
+            dp(width).coerceAtMost(maxOverlayWidthPx()),
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
@@ -1247,11 +1253,14 @@ class CallAccessibilityService : AccessibilityService() {
                         startWidth + (event.rawX - touchX).toInt()
 
                     val newWidth = changedWidth.coerceIn(
-                        dp(220),
-                        dp(520)
+                        minOverlayWidthPx(),
+                        maxOverlayWidthPx()
                     )
 
                     params.width = newWidth
+                    params.x = params.x.coerceIn(
+                        0, (resources.displayMetrics.widthPixels - newWidth).coerceAtLeast(0)
+                    )
 
                     preferences.edit()
                         .putInt(
@@ -1272,6 +1281,17 @@ class CallAccessibilityService : AccessibilityService() {
     private fun updateOverlayLayout() {
         val view = overlayView ?: return
         val params = overlayParams ?: return
+
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
+        val viewHeight = view.height.takeIf { it > 0 } ?: view.measuredHeight
+        params.width = params.width.coerceIn(minOverlayWidthPx(), maxOverlayWidthPx())
+        params.x = params.x.coerceIn(
+            0, (screenWidth - params.width).coerceAtLeast(0)
+        )
+        params.y = params.y.coerceIn(
+            0, (screenHeight - viewHeight).coerceAtLeast(0)
+        )
 
         try {
             windowManager.updateViewLayout(view, params)
@@ -1306,6 +1326,23 @@ class CallAccessibilityService : AccessibilityService() {
         overlayCallPage = 0
         lastStatusText = null
         lastStatusColor = null
+    }
+
+    private fun maxOverlayWidthPx(): Int {
+        return (resources.displayMetrics.widthPixels - dp(24)).coerceAtLeast(dp(1))
+    }
+
+    private fun minOverlayWidthPx(): Int {
+        return dp(220).coerceAtMost(maxOverlayWidthPx())
+    }
+
+    private fun minOverlayWidthDp(): Int {
+        return (minOverlayWidthPx() / resources.displayMetrics.density).toInt()
+    }
+
+    private fun maxOverlayWidthDp(): Int {
+        return (maxOverlayWidthPx() / resources.displayMetrics.density).toInt()
+            .coerceAtLeast(minOverlayWidthDp())
     }
 
     private fun dp(value: Int): Int {
