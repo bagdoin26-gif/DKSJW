@@ -602,40 +602,38 @@ class CallAccessibilityService : AccessibilityService() {
         )
     }
 
-    /** 오늘 완료 건수와 오늘 수입 추출 */
+    /** 오늘 수입이 화면에서 읽히면 저장하고, 주간 합계는 매번 갱신 */
     private fun updateTodayMetrics(screenText: String) {
-        if (preferences.getString("selected_earnings_period", "today") != "today") {
-            return
-        }
-        if (
-            !screenText.contains("오늘") ||
-            !screenText.contains("완료건수") ||
-            !screenText.contains("수입")
-        ) return
-
-        val count = Regex("""([0-9][0-9,]*)\s*건""")
-            .find(screenText)?.groupValues?.get(1) ?: return
-
-        val income = Regex("""([0-9][0-9,]*)\s*원""")
-            .find(screenText)?.groupValues?.get(1) ?: return
-
-        val deliveryCount = count.replace(",", "").toIntOrNull() ?: return
-        val deliveryFee = income.replace(",", "").toLongOrNull() ?: return
-
         val date = SimpleDateFormat("yyyy-MM-dd", Locale.KOREA).format(Date())
         val formatter = NumberFormat.getIntegerInstance(Locale.KOREA)
 
-        earningsDatabase.updateBaseFromScreen(
-            date,
-            deliveryCount,
-            deliveryFee
-        )
+        // 오늘 화면의 완료 건수와 수입을 읽을 수 있을 때만 오늘 기록을 갱신한다.
+        if (
+            screenText.contains("오늘") &&
+            screenText.contains("완료건수") &&
+            screenText.contains("수입")
+        ) {
+            val count = Regex("""([0-9][0-9,]*)\s*건""")
+                .find(screenText)?.groupValues?.get(1)
+            val income = Regex("""([0-9][0-9,]*)\s*원""")
+                .find(screenText)?.groupValues?.get(1)
 
-        todayMetricsView?.text =
-            "오늘 ${deliveryCount}건    ${formatter.format(deliveryFee)}원"
+            val deliveryCount = count?.replace(",", "")?.toIntOrNull()
+            val deliveryFee = income?.replace(",", "")?.toLongOrNull()
 
+            if (deliveryCount != null && deliveryFee != null) {
+                earningsDatabase.updateBaseFromScreen(
+                    date,
+                    deliveryCount,
+                    deliveryFee
+                )
+                todayMetricsView?.text =
+                    "오늘 ${deliveryCount}건    ${formatter.format(deliveryFee)}원"
+            }
+        }
+
+        // 오늘 화면을 읽지 못하거나 기간 선택값이 달라도 주간 합계는 항상 표시한다.
         val weekly = earningsDatabase.getWeeklySummary(date)
-
         weeklyMetricsView?.text =
             "주간 ${weekly.deliveryCount}건    ${formatter.format(weekly.totalIncome)}원"
     }
